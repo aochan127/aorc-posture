@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>AORC 姿勢測定（最短版）</title>
+<meta name="theme-color" content="#111" />
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; margin:0; background:#111; color:#eee; }
+  header { padding:12px 16px; border-bottom:1px solid #333; display:flex; gap:12px; align-items:center; }
+  h1 { font-size:18px; margin:0; }
+  main { display:grid; grid-template-columns: 1.2fr 1fr; gap:16px; padding:16px; }
+  @media (max-width: 900px){ main { grid-template-columns:1fr; } }
+  .panel { border:1px solid #333; border-radius:10px; padding:12px; background:#161616; }
+  #stage { position:relative; background:#000; border:1px solid #333; border-radius:10px; overflow:hidden; aspect-ratio:9/16; }
+  video, canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  button { background:#2a2a2a; color:#eee; border:1px solid #444; border-radius:8px; padding:10px 12px; cursor:pointer; }
+  button:disabled { opacity:.5; }
+  button:hover { background:#333; }
+  select { background:#1c1c1c; color:#eee; border:1px solid #444; border-radius:8px; padding:8px; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; }
+  th, td { border-bottom:1px solid #2a2a2a; padding:6px 4px; text-align:right; }
+  th:first-child, td:first-child { text-align:left; }
+  small { color:#aaa; }
+  .badge { font-size:12px; padding:2px 6px; border:1px solid #444; border-radius:999px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AORC 姿勢測定（最短版 / ローカル処理）</h1>
+  <span class="badge">WebCam</span>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+      <div class="row">
+        <button id="startBtn">カメラ開始</button>
+        <button id="camSwitchBtn" disabled>カメラ切替（前/後）</button>
+        <button id="snapBtn" disabled>撮影（固定）</button>
+        <button id="saveCsvBtn" disabled>CSV保存</button>
+        <button id="savePngBtn" disabled>PNG保存</button>
+      </div>
+      <div class="row">
+        <label>ビュー:
+          <select id="viewSelect">
+            <option value="front">正面（肩・膝）</option>
+            <option value="side">側面（CVA・骨盤）</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div id="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <small>コツ：正面＝両肩・両膝が見える距離／側面＝耳・肩・股関節・膝・足首が一直線に見える位置。背景はシンプル・明るく。</small>
+  </section>
+
+  <section class="panel">
+    <h3 style="margin-top:0;">現在の測定値</h3>
+    <table>
+      <tbody>
+        <tr><th>肩傾斜角（°）</th><td id="shoulderTilt">-</td><td><small>正面：左右肩ラインの水平に対する角</small></td></tr>
+        <tr><th>骨盤傾斜角（°）</th><td id="pelvicTilt">-</td><td><small>側面：左右股関節の水平に対する角（簡易）</small></td></tr>
+        <tr><th>簡易CVA（°）</th><td id="cva">-</td><td><small>側面：肩中点→頭部代表（目付近）の角度</small></td></tr>
+        <tr><th>膝内外反（°）</th><td id="kneeAngle">-</td><td><small>正面：股-膝-足首の平均角</small></td></tr>
+      </tbody>
+    </table>
+    <small>参考：肩傾斜±3°以内、CVAは概ね50–55°以上が目安。個体差大→経時比較重視。</small>
+    <h3>固定した測定</h3>
+    <div id="shots"></div>
+  </section>
+</main>
+
+<!-- ライブラリ -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+
+<script>
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('overlay');
+  const ctx = canvas.getContext('2d');
+
+  const startBtn = document.getElementById('startBtn');
+  const camSwitchBtn = document.getElementById('camSwitchBtn');
+  const snapBtn = document.getElementById('snapBtn');
+  const saveCsvBtn = document.getElementById('saveCsvBtn');
+  const savePngBtn = document.getElementById('savePngBtn');
+  const viewSelect = document.getElementById('viewSelect');
+
+  const elShoulder = document.getElementById('shoulderTilt');
+  const elPelvic   = document.getElementById('pelvicTilt');
+  const elCVA      = document.getElementById('cva');
+  const elKnee     = document.getElementById('kneeAngle');
+  const shotsDiv   = document.getElementById('shots');
+
+  let detector = null, animId = null, points = null;
+  let fixedShots = [];
+  let stream = null;
+  let useBackCamera = true; // スマホは背面優先
+
+  function rad2deg(r){ return r * 180 / Math.PI; }
+  function angleBetween(p1, p2){ const dx=p2.x-p1.x, dy=p2.y-p1.y; return rad2deg(Math.atan2(dy,dx)); }
+  function angleAt(pA, pB, pC){
+    const v1={x:pA.x-pB.x,y:pA.y-pB.y}, v2={x:pC.x-pB.x,y:pC.y-pB.y};
+    const dot=v1.x*v2.x+v1.y*v2.y, n1=Math.hypot(v1.x,v1.y), n2=Math.hypot(v2.x,v2.y);
+    if(!n1||!n2) return NaN; let c=dot/(n1*n2); c=Math.max(-1,Math.min(1,c)); return rad2deg(Math.acos(c));
+  }
+  function mid(p1,p2){ return {x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2}; }
+
+  function drawSkeleton(keypoints){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    keypoints.forEach(k=>{ if(k.score<0.3) return; ctx.beginPath(); ctx.arc(k.x,k.y,4,0,Math.PI*2); ctx.fillStyle="#29e"; ctx.fill(); });
+    const kp = Object.fromEntries(keypoints.map(k=>[k.name,k]));
+    if(kp.left_shoulder && kp.right_shoulder){
+      ctx.strokeStyle="#7af"; ctx.lineWidth=3; ctx.beginPath();
+      ctx.moveTo(kp.left_shoulder.x,kp.left_shoulder.y); ctx.lineTo(kp.right_shoulder.x,kp.right_shoulder.y); ctx.stroke();
+    }
+    if(kp.left_hip && kp.right_hip){
+      ctx.strokeStyle="#fa7"; ctx.lineWidth=3; ctx.beginPath();
+      ctx.moveTo(kp.left_hip.x,kp.left_hip.y); ctx.lineTo(kp.right_hip.x,kp.right_hip.y); ctx.stroke();
+    }
+    [["left_"],["right_"]].forEach(side=>{
+      const s=side[0];
+      const hip=kp[s+"hip"], knee=kp[s+"knee"], ankle=kp[s+"ankle"];
+      if(hip&&knee&&ankle){
+        ctx.strokeStyle="#8f8"; ctx.lineWidth=2; ctx.beginPath();
+        ctx.moveTo(hip.x,hip.y); ctx.lineTo(knee.x,knee.y); ctx.lineTo(ankle.x,ankle.y); ctx.stroke();
+      }
+    });
+  }
+
+  function computeAngles(keypoints){
+    const kp = Object.fromEntries(keypoints.map(k=>[k.name,k]));
+    const r = { shoulderTilt:NaN, pelvicTilt:NaN, cva:NaN, kneeAngle:NaN };
+
+    if(kp.left_shoulder && kp.right_shoulder){
+      r.shoulderTilt = Number(angleBetween(kp.left_shoulder, kp.right_shoulder).toFixed(1));
+    }
+    if(kp.left_hip && kp.right_hip){
+      r.pelvicTilt = Number(angleBetween(kp.left_hip, kp.right_hip).toFixed(1));
+    }
+    const headCandidates = [];
+    if(kp.left_eye) headCandidates.push(kp.left_eye);
+    if(kp.right_eye) headCandidates.push(kp.right_eye);
+    const head = headCandidates.length ? {
+      x: headCandidates.reduce((s,p)=>s+p.x,0)/headCandidates.length,
+      y: headCandidates.reduce((s,p)=>s+p.y,0)/headCandidates.length
+    } : null;
+    if(head && kp.left_shoulder && kp.right_shoulder){
+      const shoulderMid = mid(kp.left_shoulder, kp.right_shoulder);
+      const ang = angleBetween(shoulderMid, head);
+      r.cva = Number((90 - Math.abs(ang - 90)).toFixed(1)); // 簡易CVA
+    }
+    let aL=NaN,aR=NaN;
+    if(kp.left_hip && kp.left_knee && kp.left_ankle){ aL = angleAt(kp.left_hip, kp.left_knee, kp.left_ankle); }
+    if(kp.right_hip && kp.right_knee && kp.right_ankle){ aR = angleAt(kp.right_hip, kp.right_knee, kp.right_ankle); }
+    const arr=[]; if(!isNaN(aL)) arr.push(aL); if(!isNaN(aR)) arr.push(aR);
+    if(arr.length) r.kneeAngle = Number((arr.reduce((x,y)=>x+y,0)/arr.length).toFixed(1));
+    return r;
+  }
+
+  function present(a){
+    elShoulder.textContent = isNaN(a.shoulderTilt) ? "-" : a.shoulderTilt.toFixed(1);
+    elPelvic.textContent   = isNaN(a.pelvicTilt)   ? "-" : a.pelvicTilt.toFixed(1);
+    elCVA.textContent      = isNaN(a.cva)          ? "-" : a.cva.toFixed(1);
+    elKnee.textContent     = isNaN(a.kneeAngle)    ? "-" : a.kneeAngle.toFixed(1);
+  }
+
+  async function initDetector(){
+    if(detector) return detector;
+    const model = poseDetection.SupportedModels.MoveNet;
+    detector = await poseDetection.createDetector(model, {
+      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+      enableSmoothing: true
+    });
+    return detector;
+  }
+
+  async function startCamera(){
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+    const constraints = {
+      video: {
+        facingMode: useBackCamera ? { ideal:"environment" } : { ideal:"user" },
+        width:{ideal:1280}, height:{ideal:720}
+      },
+      audio:false
+    };
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = stream;
+    await video.play();
+
+    // サイズ同期
+    const w = video.videoWidth || 720, h = video.videoHeight || 1280;
+    canvas.width = w; canvas.height = h;
+
+    snapBtn.disabled = false;
+    saveCsvBtn.disabled = false;
+    savePngBtn.disabled = false;
+    camSwitchBtn.disabled = false;
+
+    loop();
+  }
+
+  async function loop(){
+    const det = await initDetector();
+    const poses = await det.estimatePoses(video, { flipHorizontal: true });
+    if(poses && poses[0] && poses[0].keypoints){
+      const names = ["nose","left_eye","right_eye","left_ear","right_ear","left_shoulder","right_shoulder","left_elbow","right_elbow","left_wrist","right_wrist","left_hip","right_hip","left_knee","right_knee","left_ankle","right_ankle"];
+      const kps = poses[0].keypoints.map((k,i)=>({x:k.x,y:k.y,score:k.score,name:names[i]||String(i)}));
+      points = kps;
+      drawSkeleton(kps);
+      present(computeAngles(kps));
+    } else {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      present({shoulderTilt:NaN,pelvicTilt:NaN,cva:NaN,kneeAngle:NaN});
+    }
+    animId = requestAnimationFrame(loop);
+  }
+
+  function takeShot(){
+    if(!points) return;
+    const dataUrl = canvas.toDataURL("image/png");
+    const now = new Date().toISOString();
+    const row = {
+      time: now,
+      view: viewSelect.value,
+      shoulderTilt: elShoulder.textContent,
+      pelvicTilt: elPelvic.textContent,
+      cva: elCVA.textContent,
+      kneeAngle: elKnee.textContent
+    };
+    fixedShots.push({ ...row, dataUrl });
+    renderShots();
+  }
+
+  function renderShots(){
+    shotsDiv.innerHTML="";
+    fixedShots.forEach(s=>{
+      const wrap=document.createElement('div');
+      wrap.style.display="grid";
+      wrap.style.gridTemplateColumns="120px 1fr";
+      wrap.style.gap="8px";
+      wrap.style.alignItems="center";
+      wrap.style.borderBottom="1px solid #2a2a2a";
+      wrap.style.padding="8px 0";
+      const img=new Image(); img.src=s.dataUrl; img.style.width="120px"; img.style.border="1px solid #333"; img.style.borderRadius="6px";
+      const meta=document.createElement('div');
+      meta.innerHTML = `<div><b>${new Date(s.time).toLocaleString()}</b> <span class="badge">${s.view}</span></div>
+      <div>肩:${s.shoulderTilt}° / 骨盤:${s.pelvicTilt}° / CVA:${s.cva}° / 膝:${s.kneeAngle}°</div>`;
+      wrap.appendChild(img); wrap.appendChild(meta); shotsDiv.appendChild(wrap);
+    });
+  }
+
+  function saveCsv(){
+    if(!fixedShots.length) return;
+    const header=["time","view","shoulderTilt","pelvicTilt","cva","kneeAngle"];
+    const lines=[header.join(",")];
+    fixedShots.forEach(s=>lines.push([s.time,s.view,s.shoulderTilt,s.pelvicTilt,s.cva,s.kneeAngle].join(",")));
+    const blob=new Blob([lines.join("\n")],{type:"text/csv;charset=utf-8;"});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download="aorc_posture.csv"; a.click();
+  }
+
+  function savePng(){
+    const a=document.createElement('a'); a.href=canvas.toDataURL("image/png"); a.download="aorc_posture_overlay.png"; a.click();
+  }
+
+  startBtn.addEventListener('click', startCamera);
+  camSwitchBtn.addEventListener('click', async ()=>{ useBackCamera=!useBackCamera; await startCamera(); });
+  snapBtn.addEventListener('click', takeShot);
+  saveCsvBtn.addEventListener('click', saveCsv);
+  savePngBtn.addEventListener('click', savePng);
+</script>
+</body>
+</html>
