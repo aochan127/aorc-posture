@@ -3,91 +3,185 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>AORC 姿勢測定（最短版）</title>
+<title>AORC 姿勢測定（完全版）</title>
 <meta name="theme-color" content="#111" />
 <style>
-  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; margin:0; background:#111; color:#eee; }
-  header { padding:12px 16px; border-bottom:1px solid #333; display:flex; gap:12px; align-items:center; }
-  h1 { font-size:18px; margin:0; }
-  main { display:grid; grid-template-columns: 1.2fr 1fr; gap:16px; padding:16px; }
-  @media (max-width: 900px){ main { grid-template-columns:1fr; } }
-  .panel { border:1px solid #333; border-radius:10px; padding:12px; background:#161616; }
-  #stage { position:relative; background:#000; border:1px solid #333; border-radius:10px; overflow:hidden; aspect-ratio:9/16; }
-  video, canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  button { background:#2a2a2a; color:#eee; border:1px solid #444; border-radius:8px; padding:10px 12px; cursor:pointer; }
-  button:disabled { opacity:.5; }
-  button:hover { background:#333; }
-  select { background:#1c1c1c; color:#eee; border:1px solid #444; border-radius:8px; padding:8px; }
-  table { width:100%; border-collapse:collapse; margin-top:8px; }
-  th, td { border-bottom:1px solid #2a2a2a; padding:6px 4px; text-align:right; }
-  th:first-child, td:first-child { text-align:left; }
-  small { color:#aaa; }
-  .badge { font-size:12px; padding:2px 6px; border:1px solid #444; border-radius:999px; }
+  :root{
+    --bg:#0f1115; --panel:#151821; --border:#262b3a; --txt:#e9eef5; --muted:#9aa4b2; --accent:#3ea8ff; --ok:#7CFC00; --warn:#ffcf5a; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif; margin:0; color:var(--txt); background: radial-gradient(1200px 800px at 70% -10%, #1a2031 0%, #0f1115 40%);}
+  header{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);backdrop-filter: blur(6px);}
+  .logo{font-weight:700;letter-spacing:.2px}
+  .brand{color:#9fc7ff}
+  .badge{font-size:12px;padding:2px 8px;border:1px solid var(--border);border-radius:999px;color:var(--muted)}
+  main{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;padding:16px}
+  @media (max-width: 1000px){ main{grid-template-columns:1fr} }
+  .panel{border:1px solid var(--border);border-radius:14px;background:linear-gradient(180deg,#161b24 0%, #11151d 100%);padding:12px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .grow{flex:1}
+  label{font-size:13px;color:var(--muted)}
+  input, select{background:#121722;color:var(--txt);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;outline:none}
+  input::placeholder{color:#6b7382}
+  button{background:#1a2030;color:var(--txt);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-weight:600;cursor:pointer;transition:.15s}
+  button:hover{background:#20283b;border-color:#2e3750}
+  button.primary{background:linear-gradient(180deg,#2b6ef6,#1746bd);border-color:#1b47c8}
+  button.primary:disabled{opacity:.6}
+  button.ghost{background:transparent}
+  #stage{position:relative;background:#000;border:1px solid var(--border);border-radius:14px;overflow:hidden;aspect-ratio:9/16}
+  video, canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+  th,td{border-bottom:1px solid #1e2431;padding:8px 6px;text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  small{color:var(--muted)}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+  .card{border:1px solid var(--border);border-radius:12px;padding:10px;background:#121722}
+  .title{font-size:12px;color:var(--muted)}
+  .value{font-size:20px;font-weight:800}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  .shots>div{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center;border-bottom:1px solid #1e2431;padding:8px 0}
+  .shots img{width:120px;border:1px solid var(--border);border-radius:8px}
+  .footer-note{margin-top:8px;font-size:12px;color:var(--muted)}
+  /* print layout for PDF capture */
+  #reportArea{background:#fff;color:#111; padding:16px; width:794px; /* ~A4 width at 96dpi */ }
+  #reportArea h2{margin:0 0 8px 0}
+  .report-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .report-box{border:1px solid #ddd;border-radius:8px;padding:8px}
 </style>
 </head>
 <body>
 <header>
-  <h1>AORC 姿勢測定（最短版 / ローカル処理）</h1>
+  <div class="logo">AORC <span class="brand">姿勢測定</span>（完全版 / ローカル処理）</div>
   <span class="badge">WebCam</span>
+  <div class="grow"></div>
+  <div class="badge">v1.0</div>
 </header>
 
 <main>
+  <!-- 左：カメラ＆操作 -->
   <section class="panel">
-    <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+    <div class="row" style="justify-content:space-between; margin-bottom:10px;">
       <div class="row">
-        <button id="startBtn">カメラ開始</button>
-        <button id="camSwitchBtn" disabled>カメラ切替（前/後）</button>
-        <button id="snapBtn" disabled>撮影（固定）</button>
-        <button id="saveCsvBtn" disabled>CSV保存</button>
-        <button id="savePngBtn" disabled>PNG保存</button>
+        <button id="startBtn" class="primary">カメラ開始</button>
+        <button id="stopBtn" class="ghost">停止</button>
+        <button id="camSwitchBtn" disabled>前/後切替</button>
+        <button id="calibBtn" disabled>スケール校正</button>
       </div>
       <div class="row">
-        <label>ビュー:
+        <label>ビュー：
           <select id="viewSelect">
             <option value="front">正面（肩・膝）</option>
-            <option value="side">側面（CVA・骨盤）</option>
+            <option value="side">側面（CVA）</option>
           </select>
         </label>
       </div>
     </div>
+
     <div id="stage">
       <video id="video" playsinline muted></video>
       <canvas id="overlay"></canvas>
     </div>
-    <small>コツ：正面＝両肩・両膝が見える距離／側面＝耳・肩・股関節・膝・足首が一直線に見える位置。背景はシンプル・明るく。</small>
+    <div class="row" style="margin-top:10px">
+      <button id="snapBtn" disabled>撮影（固定）</button>
+      <button id="saveCsvBtn" disabled>CSV保存</button>
+      <button id="savePngBtn" disabled>PNG保存</button>
+      <button id="savePdfBtn" disabled>PDF保存</button>
+      <div class="row">
+        <label>氏名：<input id="patientName" placeholder="例）山田 太郎" style="width:160px"></label>
+        <label>実年齢：<input id="realAge" type="number" min="0" max="120" value="40" style="width:80px"></label>
+        <button id="calcAgeBtn">姿勢年齢算出</button>
+      </div>
+    </div>
+    <small>撮影コツ：正面＝両肩・両膝が見える距離／側面＝耳・肩・股関節・膝・足首が一直線に見える位置。背景は無地・明るく。</small>
   </section>
 
+  <!-- 右：メトリクス＆履歴 -->
   <section class="panel">
-    <h3 style="margin-top:0;">現在の測定値</h3>
+    <h3 style="margin:0 0 8px 0;">現在の測定値</h3>
     <table>
       <tbody>
         <tr><th>肩傾斜角（°）</th><td id="shoulderTilt">-</td><td><small>正面：左右肩ラインの水平に対する角</small></td></tr>
-        <tr><th>骨盤傾斜角（°）</th><td id="pelvicTilt">-</td><td><small>側面：左右股関節の水平に対する角（簡易）</small></td></tr>
-        <tr><th>簡易CVA（°）</th><td id="cva">-</td><td><small>側面：肩中点→頭部代表（目付近）の角度</small></td></tr>
-        <tr><th>膝内外反（°）</th><td id="kneeAngle">-</td><td><small>正面：股-膝-足首の平均角</small></td></tr>
+        <tr><th>骨盤左右傾き（°）</th><td id="pelvicTilt">-</td><td><small>正面：左右股関節ラインの水平角（簡易）</small></td></tr>
+        <tr><th>簡易CVA距離（mm）</th><td id="cva">-</td><td><small>側面：肩中点→頭部代表の水平距離（mm/px校正後）</small></td></tr>
+        <tr><th>膝内外反（°）</th><td id="kneeAngle">-</td><td><small>正面：股-膝-足首の角度（平均）</small></td></tr>
       </tbody>
     </table>
-    <small>参考：肩傾斜±3°以内、CVAは概ね50–55°以上が目安。個体差大→経時比較重視。</small>
-    <h3>固定した測定</h3>
-    <div id="shots"></div>
+
+    <div class="kpi">
+      <div class="card">
+        <div class="title">スケール（mm/px）</div>
+        <div class="value" id="mmPerPx">未校正</div>
+      </div>
+      <div class="card">
+        <div class="title">加算（外観）</div>
+        <div class="value" id="deltaAge">-</div>
+      </div>
+      <div class="card">
+        <div class="title">姿勢年齢</div>
+        <div class="value" id="postureAge">-</div>
+      </div>
+    </div>
+
+    <h3 style="margin:14px 0 6px 0;">固定した測定</h3>
+    <div class="shots" id="shots"></div>
+    <div class="footer-note">※ 矢状面（骨盤前傾/後傾・胸椎/腰椎カーブ）は外観から正確には取得できません。必要時はX線で評価します。</div>
   </section>
 </main>
+
+<!-- PDF用レポート（非表示だがHTMLとして存在） -->
+<div id="reportArea" style="position:fixed; left:-20000px; top:-20000px;">
+  <h2>AORC 姿勢年齢レポート</h2>
+  <div style="margin:4px 0 10px 0; font-size:14px">
+    氏名：<span id="rName">-</span>／ 実年齢：<span id="rRealAge">-</span>／ 姿勢年齢：<span id="rPostureAge">-</span>（+<span id="rDelta">-</span>）
+  </div>
+  <div class="report-grid">
+    <div class="report-box">
+      <h3 style="margin:0 0 6px 0;">測定写真</h3>
+      <img id="rShot" alt="shot" style="width:100%; border:1px solid #ccc; border-radius:6px" />
+    </div>
+    <div class="report-box">
+      <h3 style="margin:0 0 6px 0;">測定値</h3>
+      <table style="width:100%; border-collapse:collapse; font-size:13px">
+        <tr><th style="text-align:left;border-bottom:1px solid #ddd">項目</th><th style="text-align:right;border-bottom:1px solid #ddd">値</th><th style="text-align:right;border-bottom:1px solid #ddd">基準</th></tr>
+        <tr><td>肩傾斜角（°）</td><td id="rShoulder" style="text-align:right"></td><td style="text-align:right">±3°以内目安</td></tr>
+        <tr><td>骨盤左右傾き（°）</td><td id="rPelvic" style="text-align:right"></td><td style="text-align:right">±3°以内目安</td></tr>
+        <tr><td>CVA距離（mm）</td><td id="rCva" style="text-align:right"></td><td style="text-align:right">40mm（±10）</td></tr>
+        <tr><td>膝内外反（°）</td><td id="rKnee" style="text-align:right"></td><td style="text-align:right">±5°以内</td></tr>
+      </table>
+      <div style="margin-top:8px;font-size:12px;color:#555">※ CVAは外観近似。骨のアライメントはX線で確認。</div>
+    </div>
+  </div>
+  <div class="report-box" style="margin-top:10px">
+    <h3 style="margin:0 0 6px 0;">コメント</h3>
+    <div id="rComment" style="font-size:13px; line-height:1.6">
+      ・首〜肩の前方化がやや強めです。胸を開くストレッチと頭部リトラクションを推奨します。<br/>
+      ・左右バランスの是正に向けて、骨盤の水平を意識した立位を心がけましょう。<br/>
+      ・詳細評価や個別プログラムをご希望の方は自費リハ（60分）をご活用ください。
+    </div>
+  </div>
+  <div style="margin-top:8px;font-size:12px;color:#555">AORC あおき整形外科リハビリクリニック</div>
+</div>
 
 <!-- ライブラリ -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 
 <script>
+  // ---- 要素
   const video = document.getElementById('video');
   const canvas = document.getElementById('overlay');
   const ctx = canvas.getContext('2d');
 
   const startBtn = document.getElementById('startBtn');
+  const stopBtn  = document.getElementById('stopBtn');
   const camSwitchBtn = document.getElementById('camSwitchBtn');
+  const calibBtn = document.getElementById('calibBtn');
   const snapBtn = document.getElementById('snapBtn');
   const saveCsvBtn = document.getElementById('saveCsvBtn');
   const savePngBtn = document.getElementById('savePngBtn');
+  const savePdfBtn = document.getElementById('savePdfBtn');
   const viewSelect = document.getElementById('viewSelect');
 
   const elShoulder = document.getElementById('shoulderTilt');
@@ -96,32 +190,64 @@
   const elKnee     = document.getElementById('kneeAngle');
   const shotsDiv   = document.getElementById('shots');
 
-  let detector = null, animId = null, points = null;
-  let fixedShots = [];
-  let stream = null;
-  let useBackCamera = true; // スマホは背面優先
+  const mmPerPxEl  = document.getElementById('mmPerPx');
+  const deltaAgeEl = document.getElementById('deltaAge');
+  const postureAgeEl = document.getElementById('postureAge');
+  const patientNameEl = document.getElementById('patientName');
+  const realAgeInput = document.getElementById('realAge');
+  const calcAgeBtn   = document.getElementById('calcAgeBtn');
 
-  function rad2deg(r){ return r * 180 / Math.PI; }
-  function angleBetween(p1, p2){ const dx=p2.x-p1.x, dy=p2.y-p1.y; return rad2deg(Math.atan2(dy,dx)); }
-  function angleAt(pA, pB, pC){
+  // PDF area refs
+  const rName = document.getElementById('rName');
+  const rRealAge = document.getElementById('rRealAge');
+  const rPostureAge = document.getElementById('rPostureAge');
+  const rDelta = document.getElementById('rDelta');
+  const rShot = document.getElementById('rShot');
+  const rShoulder = document.getElementById('rShoulder');
+  const rPelvic = document.getElementById('rPelvic');
+  const rCva = document.getElementById('rCva');
+  const rKnee = document.getElementById('rKnee');
+
+  // ---- 状態
+  let detector = null, animId = null, points = null, stream = null;
+  let useBackCamera = true;
+  let fixedShots = [];
+  // スムージング
+  const SMOOTH_N = 8;
+  const buf = { shoulderTilt:[], pelvicTilt:[], cva:[], kneeAngle:[] };
+
+  // スケール（mm/px）
+  let MM_PER_PX = NaN; // 校正前はNaN
+  let calibMode = false, calibPts = [];
+
+  // ---- 便利関数
+  const rad2deg = r => r * 180 / Math.PI;
+  function angleBetween(p1,p2){ const dx=p2.x-p1.x, dy=p2.y-p1.y; return rad2deg(Math.atan2(dy,dx)); }
+  function angleAt(pA,pB,pC){
     const v1={x:pA.x-pB.x,y:pA.y-pB.y}, v2={x:pC.x-pB.x,y:pC.y-pB.y};
     const dot=v1.x*v2.x+v1.y*v2.y, n1=Math.hypot(v1.x,v1.y), n2=Math.hypot(v2.x,v2.y);
     if(!n1||!n2) return NaN; let c=dot/(n1*n2); c=Math.max(-1,Math.min(1,c)); return rad2deg(Math.acos(c));
   }
-  function mid(p1,p2){ return {x:(p1.x+p2.x)/2, y:(p1.y+p2.y)/2}; }
+  const mid = (p1,p2)=>({x:(p1.x+p2.x)/2,y:(p1.y+p2.y)/2});
+  const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
 
+  // ---- 描画
   function drawSkeleton(keypoints){
     ctx.clearRect(0,0,canvas.width,canvas.height);
+    // 画像暗め → 点線を明るく
     keypoints.forEach(k=>{ if(k.score<0.3) return; ctx.beginPath(); ctx.arc(k.x,k.y,4,0,Math.PI*2); ctx.fillStyle="#29e"; ctx.fill(); });
     const kp = Object.fromEntries(keypoints.map(k=>[k.name,k]));
+    // 肩ライン
     if(kp.left_shoulder && kp.right_shoulder){
       ctx.strokeStyle="#7af"; ctx.lineWidth=3; ctx.beginPath();
       ctx.moveTo(kp.left_shoulder.x,kp.left_shoulder.y); ctx.lineTo(kp.right_shoulder.x,kp.right_shoulder.y); ctx.stroke();
     }
+    // 股関節ライン（左右傾き）
     if(kp.left_hip && kp.right_hip){
       ctx.strokeStyle="#fa7"; ctx.lineWidth=3; ctx.beginPath();
       ctx.moveTo(kp.left_hip.x,kp.left_hip.y); ctx.lineTo(kp.right_hip.x,kp.right_hip.y); ctx.stroke();
     }
+    // 下肢折れ線
     [["left_"],["right_"]].forEach(side=>{
       const s=side[0];
       const hip=kp[s+"hip"], knee=kp[s+"knee"], ankle=kp[s+"ankle"];
@@ -130,18 +256,39 @@
         ctx.moveTo(hip.x,hip.y); ctx.lineTo(knee.x,knee.y); ctx.lineTo(ankle.x,ankle.y); ctx.stroke();
       }
     });
+
+    // 校正線（モード時）
+    if(calibPts.length===1){
+      const p=calibPts[0];
+      ctx.fillStyle="#ffcf5a"; ctx.beginPath(); ctx.arc(p.x,p.y,6,0,Math.PI*2); ctx.fill();
+    } else if(calibPts.length===2){
+      const [a,b]=calibPts;
+      ctx.strokeStyle="#ffcf5a"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      ctx.fillStyle="#ffcf5a"; ctx.beginPath(); ctx.arc(a.x,a.y,5,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(b.x,b.y,5,0,Math.PI*2); ctx.fill();
+      const d = Math.hypot(a.x-b.x, a.y-b.y).toFixed(1);
+      ctx.fillStyle="#111"; ctx.strokeStyle="#ffcf5a"; ctx.lineWidth=2;
+      ctx.strokeRect((a.x+b.x)/2-40,(a.y+b.y)/2-18,80,22);
+      ctx.fillRect((a.x+b.x)/2-40,(a.y+b.y)/2-18,80,22);
+      ctx.fillStyle="#ffcf5a"; ctx.font="bold 12px system-ui";
+      ctx.fillText(`${d}px`, (a.x+b.x)/2-18,(a.y+b.y)/2-2);
+    }
   }
 
+  // ---- 計算（瞬時）
   function computeAngles(keypoints){
     const kp = Object.fromEntries(keypoints.map(k=>[k.name,k]));
-    const r = { shoulderTilt:NaN, pelvicTilt:NaN, cva:NaN, kneeAngle:NaN };
+    const r = { shoulderTilt:NaN, pelvicTilt:NaN, cva_mm:NaN, kneeAngle:NaN };
 
+    // 肩傾斜
     if(kp.left_shoulder && kp.right_shoulder){
-      r.shoulderTilt = Number(angleBetween(kp.left_shoulder, kp.right_shoulder).toFixed(1));
+      r.shoulderTilt = Number(angleBetween(kp.left_shoulder, kp.right_shoulder).toFixed(2));
     }
+    // 骨盤左右傾き（股関節ラインの傾き）
     if(kp.left_hip && kp.right_hip){
-      r.pelvicTilt = Number(angleBetween(kp.left_hip, kp.right_hip).toFixed(1));
+      r.pelvicTilt = Number(angleBetween(kp.left_hip, kp.right_hip).toFixed(2));
     }
+    // 簡易CVA（側面）：肩中点→頭部代表（目の平均）の水平距離（mm）
     const headCandidates = [];
     if(kp.left_eye) headCandidates.push(kp.left_eye);
     if(kp.right_eye) headCandidates.push(kp.right_eye);
@@ -151,9 +298,10 @@
     } : null;
     if(head && kp.left_shoulder && kp.right_shoulder){
       const shoulderMid = mid(kp.left_shoulder, kp.right_shoulder);
-      const ang = angleBetween(shoulderMid, head);
-      r.cva = Number((90 - Math.abs(ang - 90)).toFixed(1)); // 簡易CVA
+      const dx = Math.abs(head.x - shoulderMid.x); // px
+      r.cva_mm = isNaN(MM_PER_PX) ? NaN : Number((dx * MM_PER_PX).toFixed(1));
     }
+    // 膝角（平均）
     let aL=NaN,aR=NaN;
     if(kp.left_hip && kp.left_knee && kp.left_ankle){ aL = angleAt(kp.left_hip, kp.left_knee, kp.left_ankle); }
     if(kp.right_hip && kp.right_knee && kp.right_ankle){ aR = angleAt(kp.right_hip, kp.right_knee, kp.right_ankle); }
@@ -162,13 +310,75 @@
     return r;
   }
 
-  function present(a){
-    elShoulder.textContent = isNaN(a.shoulderTilt) ? "-" : a.shoulderTilt.toFixed(1);
-    elPelvic.textContent   = isNaN(a.pelvicTilt)   ? "-" : a.pelvicTilt.toFixed(1);
-    elCVA.textContent      = isNaN(a.cva)          ? "-" : a.cva.toFixed(1);
-    elKnee.textContent     = isNaN(a.kneeAngle)    ? "-" : a.kneeAngle.toFixed(1);
+  // ---- スムージング
+  function pushSmooth(arr, v){ if(!isNaN(v)){ arr.push(v); if(arr.length>SMOOTH_N) arr.shift(); } }
+  const avg = arr => arr.length? (arr.reduce((a,b)=>a+b,0)/arr.length) : NaN;
+  function smoothAngles(a){
+    pushSmooth(buf.shoulderTilt, a.shoulderTilt);
+    pushSmooth(buf.pelvicTilt  , a.pelvicTilt);
+    pushSmooth(buf.cva         , a.cva_mm);
+    pushSmooth(buf.kneeAngle   , a.kneeAngle);
+    return {
+      shoulderTilt: avg(buf.shoulderTilt),
+      pelvicTilt  : avg(buf.pelvicTilt),
+      cva_mm      : avg(buf.cva),
+      kneeAngle   : avg(buf.kneeAngle)
+    };
   }
 
+  // ---- 姿勢年齢（外観版）ルール
+  const BASE = {
+    CVA_MM: 40,            // 40mm（±10許容）
+    KNEE_ANGLE_DEG: 5      // ±5°以内
+  };
+  function postureAgeDeltaExterior(meas){
+    let score = 0;
+    // CVA：40mm基準、10mm超過ごと +2、上限+8
+    if(!isNaN(meas.cva_mm)){
+      score += Math.min(8, Math.max(0, Math.floor((meas.cva_mm - BASE.CVA_MM)/10) * 2));
+    }
+    // 肩左右差（角度→高さ差を簡易推定）：体幅 ~400px 想定、校正済みでmm換算
+    if(!isNaN(meas.shoulderTilt) && !isNaN(MM_PER_PX)){
+      const diff_px = Math.tan((Math.abs(meas.shoulderTilt)*Math.PI)/180) * 400;
+      const diff_mm = diff_px * MM_PER_PX;
+      score += Math.min(3, Math.max(0, Math.floor(diff_mm / 10)));
+    }
+    // 骨盤左右差：体幅 ~300px 想定
+    if(!isNaN(meas.pelvicTilt) && !isNaN(MM_PER_PX)){
+      const diff_px = Math.tan((Math.abs(meas.pelvicTilt)*Math.PI)/180) * 300;
+      const diff_mm = diff_px * MM_PER_PX;
+      score += Math.min(3, Math.max(0, Math.floor(diff_mm / 10)));
+    }
+    // 膝内外反：5°超過ごと +1、上限+3
+    if(!isNaN(meas.kneeAngle)){
+      const over = Math.max(0, Math.abs(meas.kneeAngle) - BASE.KNEE_ANGLE_DEG);
+      score += Math.min(3, Math.floor(over / 5));
+    }
+    return score;
+  }
+  function computePostureAge(realAge, meas){
+    const delta = postureAgeDeltaExterior(meas);
+    return { delta, postureAge: isNaN(realAge)? NaN : (realAge + delta) };
+  }
+
+  // ---- プレゼンテーション
+  function present(a){
+    // 表示
+    elShoulder.textContent = isNaN(a.shoulderTilt) ? "-" : a.shoulderTilt.toFixed(1);
+    elPelvic.textContent   = isNaN(a.pelvicTilt)   ? "-" : a.pelvicTilt.toFixed(1);
+    elCVA.textContent      = isNaN(a.cva_mm)       ? "-" : a.cva_mm.toFixed(0);
+    elKnee.textContent     = isNaN(a.kneeAngle)    ? "-" : a.kneeAngle.toFixed(1);
+    mmPerPxEl.textContent  = isNaN(MM_PER_PX)      ? "未校正" : `${MM_PER_PX.toFixed(3)} mm/px`;
+
+    // 姿勢年齢（リアルタイム試算）
+    const realAge = parseInt(realAgeInput.value||"");
+    const meas = { shoulderTilt: a.shoulderTilt, pelvicTilt: a.pelvicTilt, cva_mm: a.cva_mm, kneeAngle: a.kneeAngle };
+    const { delta, postureAge } = computePostureAge(realAge, meas);
+    deltaAgeEl.textContent   = isNaN(delta) ? "-" : `+${delta}`;
+    postureAgeEl.textContent = (isNaN(realAge) || isNaN(postureAge)) ? "-" : postureAge;
+  }
+
+  // ---- カメラ
   async function initDetector(){
     if(detector) return detector;
     const model = poseDetection.SupportedModels.MoveNet;
@@ -178,32 +388,25 @@
     });
     return detector;
   }
-
   async function startCamera(){
     if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
     const constraints = {
-      video: {
-        facingMode: useBackCamera ? { ideal:"environment" } : { ideal:"user" },
-        width:{ideal:1280}, height:{ideal:720}
-      },
+      video: { facingMode: useBackCamera ? {ideal:"environment"} : {ideal:"user"}, width:{ideal:1280}, height:{ideal:720} },
       audio:false
     };
     stream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = stream;
-    await video.play();
-
-    // サイズ同期
+    video.srcObject = stream; await video.play();
     const w = video.videoWidth || 720, h = video.videoHeight || 1280;
     canvas.width = w; canvas.height = h;
 
-    snapBtn.disabled = false;
-    saveCsvBtn.disabled = false;
-    savePngBtn.disabled = false;
-    camSwitchBtn.disabled = false;
-
+    snapBtn.disabled = false; saveCsvBtn.disabled = false; savePngBtn.disabled = false; savePdfBtn.disabled = false; camSwitchBtn.disabled = false; calibBtn.disabled = false;
     loop();
   }
-
+  function stopCamera(){
+    if(animId) cancelAnimationFrame(animId);
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
   async function loop(){
     const det = await initDetector();
     const poses = await det.estimatePoses(video, { flipHorizontal: true });
@@ -211,67 +414,181 @@
       const names = ["nose","left_eye","right_eye","left_ear","right_ear","left_shoulder","right_shoulder","left_elbow","right_elbow","left_wrist","right_wrist","left_hip","right_hip","left_knee","right_knee","left_ankle","right_ankle"];
       const kps = poses[0].keypoints.map((k,i)=>({x:k.x,y:k.y,score:k.score,name:names[i]||String(i)}));
       points = kps;
+      const aRaw = computeAngles(kps);
+      const a = smoothAngles(aRaw);
       drawSkeleton(kps);
-      present(computeAngles(kps));
+      present(a);
     } else {
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      present({shoulderTilt:NaN,pelvicTilt:NaN,cva:NaN,kneeAngle:NaN});
+      present({shoulderTilt:NaN,pelvicTilt:NaN,cva_mm:NaN,kneeAngle:NaN});
     }
     animId = requestAnimationFrame(loop);
   }
 
+  // ---- スケール校正（キャンバス上で2点クリック→実長入力）
+  canvas.addEventListener('click', (e)=>{
+    if(!calibMode) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width/rect.width);
+    const y = (e.clientY - rect.top)  * (canvas.height/rect.height);
+    calibPts.push({x,y});
+    if(calibPts.length>2) calibPts.shift();
+  });
+
+  calibBtn.addEventListener('click', async ()=>{
+    calibMode = !calibMode;
+    calibPts = [];
+    calibBtn.textContent = calibMode ? "校正：2点クリック → 確定" : "スケール校正";
+    if(!calibMode && calibPts.length===2){
+      // 解除時に…だと使いにくいので、このボタンは「トグル（ONで2点選択）」→別途確定にする
+    }
+  });
+
+  // 右クリックで確定（スマホ長押しは難しいので、代わりに「もう一度校正ボタン」を押したタイミングで確定）
+  document.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter' && calibPts.length===2){
+      finalizeCalibration();
+    }
+  });
+  function finalizeCalibration(){
+    if(calibPts.length!==2) return;
+    const dpx = Math.hypot(calibPts[0].x - calibPts[1].x, calibPts[0].y - calibPts[1].y);
+    const mm = prompt(`基準物の実長（mm）を入力してください。\n例：A4短辺 210mm / マーカー 100mm など`, "100");
+    const realMM = Number(mm);
+    if(realMM>0){
+      MM_PER_PX = realMM / dpx;
+      mmPerPxEl.textContent = `${MM_PER_PX.toFixed(3)} mm/px`;
+      calibPts = [];
+      calibMode = false;
+      calibBtn.textContent = "スケール校正";
+    }
+  }
+  // 校正をわかりやすく：校正ボタンを2回押すと確定ダイアログ
+  calibBtn.addEventListener('dblclick', finalizeCalibration);
+
+  // ---- スナップ＆履歴
   function takeShot(){
     if(!points) return;
-    const dataUrl = canvas.toDataURL("image/png");
-    const now = new Date().toISOString();
+    // 合成イメージ（video + overlay）を1枚PNGに
+    const tmp = document.createElement('canvas');
+    tmp.width = canvas.width; tmp.height = canvas.height;
+    const tctx = tmp.getContext('2d');
+    tctx.drawImage(video, 0,0, tmp.width, tmp.height);
+    tctx.drawImage(canvas, 0,0, tmp.width, tmp.height);
+    const dataUrl = tmp.toDataURL("image/png");
+
+    const now = new Date();
     const row = {
-      time: now,
+      time: now.toISOString(),
+      local: now.toLocaleString(),
       view: viewSelect.value,
       shoulderTilt: elShoulder.textContent,
       pelvicTilt: elPelvic.textContent,
       cva: elCVA.textContent,
-      kneeAngle: elKnee.textContent
+      kneeAngle: elKnee.textContent,
+      mmPerPx: isNaN(MM_PER_PX) ? "" : MM_PER_PX.toFixed(4)
     };
     fixedShots.push({ ...row, dataUrl });
     renderShots();
   }
-
   function renderShots(){
     shotsDiv.innerHTML="";
     fixedShots.forEach(s=>{
       const wrap=document.createElement('div');
-      wrap.style.display="grid";
-      wrap.style.gridTemplateColumns="120px 1fr";
-      wrap.style.gap="8px";
-      wrap.style.alignItems="center";
-      wrap.style.borderBottom="1px solid #2a2a2a";
-      wrap.style.padding="8px 0";
-      const img=new Image(); img.src=s.dataUrl; img.style.width="120px"; img.style.border="1px solid #333"; img.style.borderRadius="6px";
+      const img=new Image(); img.src=s.dataUrl; img.alt="shot";
       const meta=document.createElement('div');
-      meta.innerHTML = `<div><b>${new Date(s.time).toLocaleString()}</b> <span class="badge">${s.view}</span></div>
-      <div>肩:${s.shoulderTilt}° / 骨盤:${s.pelvicTilt}° / CVA:${s.cva}° / 膝:${s.kneeAngle}°</div>`;
+      meta.innerHTML = `<div><b>${s.local}</b> <span class="badge">${s.view}</span></div>
+      <div style="color:#9aa4b2">肩:${s.shoulderTilt}° / 骨盤:${s.pelvicTilt}° / CVA:${s.cva}mm / 膝:${s.kneeAngle}°</div>`;
       wrap.appendChild(img); wrap.appendChild(meta); shotsDiv.appendChild(wrap);
     });
   }
 
+  // ---- エクスポート
   function saveCsv(){
     if(!fixedShots.length) return;
-    const header=["time","view","shoulderTilt","pelvicTilt","cva","kneeAngle"];
+    const header=["time","view","shoulderTilt_deg","pelvicTilt_deg","cva_mm","kneeAngle_deg","mmPerPx"];
     const lines=[header.join(",")];
-    fixedShots.forEach(s=>lines.push([s.time,s.view,s.shoulderTilt,s.pelvicTilt,s.cva,s.kneeAngle].join(",")));
+    fixedShots.forEach(s=>lines.push([s.time,s.view,s.shoulderTilt,s.pelvicTilt,s.cva,s.kneeAngle,s.mmPerPx].join(",")));
     const blob=new Blob([lines.join("\n")],{type:"text/csv;charset=utf-8;"});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download="aorc_posture.csv"; a.click();
   }
-
   function savePng(){
-    const a=document.createElement('a'); a.href=canvas.toDataURL("image/png"); a.download="aorc_posture_overlay.png"; a.click();
+    const tmp = document.createElement('canvas');
+    tmp.width = canvas.width; tmp.height = canvas.height;
+    const tctx = tmp.getContext('2d');
+    tctx.drawImage(video, 0,0, tmp.width, tmp.height);
+    tctx.drawImage(canvas, 0,0, tmp.width, tmp.height);
+    const a=document.createElement('a'); a.href=tmp.toDataURL("image/png"); a.download="aorc_posture_overlay.png"; a.click();
+  }
+  async function savePdf(){
+    // レポートに現在のスナップ or ラストショットを反映
+    const shot = fixedShots.length ? fixedShots[fixedShots.length-1] : null;
+    const name = patientNameEl.value || "未入力";
+    const realAge = realAgeInput.value || "-";
+    const delta = deltaAgeEl.textContent.replace("+","") || "-";
+    const pAge = postureAgeEl.textContent || "-";
+
+    rName.textContent = name;
+    rRealAge.textContent = realAge;
+    rPostureAge.textContent = pAge;
+    rDelta.textContent = delta;
+    rShoulder.textContent = elShoulder.textContent;
+    rPelvic.textContent   = elPelvic.textContent;
+    rCva.textContent      = elCVA.textContent;
+    rKnee.textContent     = elKnee.textContent;
+    if(shot){ rShot.src = shot.dataUrl; }
+    else {
+      // 直前のライブ合成を入れる
+      const tmp = document.createElement('canvas');
+      tmp.width = canvas.width; tmp.height = canvas.height;
+      const tctx = tmp.getContext('2d');
+      tctx.drawImage(video, 0,0, tmp.width, tmp.height);
+      tctx.drawImage(canvas, 0,0, tmp.width, tmp.height);
+      rShot.src = tmp.toDataURL("image/png");
+    }
+
+    // html2canvasでDOM→画像→jsPDF
+    const el = document.getElementById('reportArea');
+    const canvasRep = await html2canvas(el, {scale:2, backgroundColor:"#ffffff"});
+    const imgData = canvasRep.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation:"portrait", unit:"pt", format:"a4" });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    // 余白込みでフィット
+    const imgW = pageW-60, imgH = canvasRep.height * (imgW/canvasRep.width);
+    pdf.addImage(imgData, 'PNG', 30, 30, imgW, imgH);
+    pdf.save(`AORC_posture_report_${name || 'noname'}.pdf`);
   }
 
+  // ---- 姿勢年齢ボタン（UI確定）
+  function getCurrentMeas(){
+    return {
+      shoulderTilt: parseFloat(elShoulder.textContent),
+      pelvicTilt  : parseFloat(elPelvic.textContent),
+      cva_mm      : parseFloat(elCVA.textContent),
+      kneeAngle   : parseFloat(elKnee.textContent),
+    };
+  }
+  calcAgeBtn.addEventListener('click', ()=>{
+    const meas = getCurrentMeas();
+    const realAge = parseInt(realAgeInput.value||"");
+    const { delta, postureAge } = computePostureAge(realAge, meas);
+    deltaAgeEl.textContent   = isNaN(delta) ? "-" : `+${delta}`;
+    postureAgeEl.textContent = (isNaN(realAge) || isNaN(postureAge)) ? "-" : postureAge;
+  });
+
+  // ---- イベント
   startBtn.addEventListener('click', startCamera);
+  stopBtn.addEventListener('click', stopCamera);
   camSwitchBtn.addEventListener('click', async ()=>{ useBackCamera=!useBackCamera; await startCamera(); });
   snapBtn.addEventListener('click', takeShot);
   saveCsvBtn.addEventListener('click', saveCsv);
   savePngBtn.addEventListener('click', savePng);
+  savePdfBtn.addEventListener('click', savePdf);
+
+  // 初期：ボタン無効（開始後に有効化）
+  [snapBtn, saveCsvBtn, savePngBtn, savePdfBtn, camSwitchBtn, calibBtn].forEach(b=>b.disabled=true);
 </script>
 </body>
 </html>
